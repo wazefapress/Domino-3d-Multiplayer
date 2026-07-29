@@ -5,7 +5,7 @@ let isMultiplayer = false;
 
 const sounds = {
     placePiece: new Howl({ src: ['place.mp3'] }),
-    winRound: new Howl({ src: ['win.wav'] }),
+    winRound: new Howl({ src: ['win.mp3'] }),
     loseRound: new Howl({ src: ['lose.mp3'] }),
     shuffle: new Howl({ src: ['shuffle.mp3'] })
 };
@@ -13,16 +13,17 @@ const sounds = {
 // --- 2. محرك 3D (Three.js) ---
 let scene, camera, renderer, raycaster, mouse;
 
+// 1. ضبط الكاميرا لتغطي أسفل الشاشة بالكامل
 function init3D() {
-    const container = document.getElementById('game-canvas');
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1e5631); // طاولة خضراء
+    camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 8.5, 8.8); 
+    camera.lookAt(0, 0, 0.5); // توجيه النظر قليلاً نحو الأسفل ليشمل اليد كاملة
+}
     
-    
-// إعداد الكاميرا للوضع الأفقي (Landscape)
+    // إعداد الكاميرا للوضع الأفقي (Landscape) - قريبة وتغطي العرض
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 7, 7.5); // تقريب الكاميرا (خفض الارتفاع وتقريب المسافة Z)
-camera.lookAt(0, 0, 0);
+    camera.position.set(0, 8, 8.5); 
+    camera.lookAt(0, 0, 0);
     
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -36,7 +37,11 @@ camera.lookAt(0, 0, 0);
     raycaster = new THREE.Raycaster();
     mouse = new THREE.Vector2();
 
-    window.addEventListener('resize', onWindowResize);
+    window.addEventListener('resize', updateCanvasSize);
+    window.addEventListener('orientationchange', () => {
+        setTimeout(updateCanvasSize, 300);
+    });
+
     window.addEventListener('click', onPlayerInput);
     window.addEventListener('touchstart', (e) => { 
         e.clientX = e.touches[0].clientX; 
@@ -47,7 +52,7 @@ camera.lookAt(0, 0, 0);
     animate3D();
 }
 
-function onWindowResize() {
+function updateCanvasSize() {
     if (!camera || !renderer) return;
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -66,20 +71,19 @@ function createDominoTexture(val1, val2) {
     canvas.height = 256; 
     const ctx = canvas.getContext('2d');
 
-    // الخلفية البيضاء للقطعة
+    // الخلفية البيضاء
     ctx.fillStyle = '#fdfdfd';
     ctx.fillRect(0, 0, 128, 256);
 
-    // حدود القطعة
+    // الحدود الخارجية
     ctx.strokeStyle = '#cccccc';
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, 128, 256);
 
-    // الخط الفاصل الأسود في المنتصف
+    // الخط الأسود الفاصل في المنتصف
     ctx.fillStyle = '#111111';
     ctx.fillRect(0, 124, 128, 8);
 
-    // إحداثيات النقاط السوداء (من 0 إلى 6)
     const dotPositions = {
         1: [[64, 64]],
         2: [[32, 32], [96, 96]],
@@ -121,46 +125,61 @@ function createDominoMesh(val1, val2) {
     return new THREE.Mesh(geometry, materials);
 }
 
+
+// 2. ضبط موقع القطع في يد اللاعب لمنع قصها
 function renderHand3D() {
     scene.children = scene.children.filter(c => !c.userData.inHand);
     
     const startX = -((playerHand.length - 1) * 1.2) / 2;
     playerHand.forEach((piece, index) => {
         const mesh = createDominoMesh(piece.val1, piece.val2);
-        mesh.position.set(startX + (index * 1.2), 0.5, 6);
-        mesh.rotation.x = Math.PI / 8;
+        // سحب القطع للخلف قليلاً (Z=4.8) ورفعها (Y=0.4) لتبقى كاملة داخل الشاشة
+        mesh.position.set(startX + (index * 1.2), 0.4, 4.8); 
+        mesh.rotation.x = Math.PI / 6; // مائل زاوية مريحة للرؤية
         
         mesh.userData = { ...piece, inHand: true, isPlayerPiece: true };
         scene.add(mesh);
     });
 }
 
-// --- 4. محرك اللعبة (Game Logic) ---
+// --- 4. محرك اللعبة ومسافات الطاولة ---
 let gameDeck = [], playerHand = [], opponentHand = [];
 let boardEnds = { left: null, right: null };
 let currentPlayer = ''; 
 let passCount = 0;
 let playerTotalScore = 0, opponentTotalScore = 0;
-let layoutLeftX = -1.5, layoutRightX = 1.5;
+
+// مسافة الخطوة للطاولة الأفقية
+const stepSize = 1.05;
+let layoutLeftX = -stepSize, layoutRightX = stepSize;
 
 function startGame(vsComputer = true) {
-    document.getElementById('room-controls').classList.add('d-none');
+    const roomControls = document.getElementById('room-controls');
+    if(roomControls) roomControls.classList.add('d-none');
+    
+    const mainMenu = document.getElementById('main-menu');
+    if(mainMenu) mainMenu.style.display = 'none';
+    
+    const gameContainer = document.getElementById('game-container');
+    if(gameContainer) gameContainer.style.display = 'block';
+
     isMultiplayer = !vsComputer;
-    
-    // تحديث أبعاد Three.js لمنع الشاشة السوداء عند بدء اللعب
-    if (camera && renderer) {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-    
+    updateCanvasSize();
     initRound();
+}
+
+const btnVsAi = document.getElementById('btn-vs-ai');
+if(btnVsAi) {
+    btnVsAi.addEventListener('click', () => {
+        startGame(true);
+    });
 }
 
 function initRound() {
     scene.children = scene.children.filter(c => !c.userData.onBoard);
     boardEnds = { left: null, right: null };
-    layoutLeftX = -1.5; layoutRightX = 1.5;
+    layoutLeftX = -stepSize; 
+    layoutRightX = stepSize;
     passCount = 0;
 
     gameDeck = [];
@@ -233,9 +252,7 @@ function playAI() {
         
         opponentHand = opponentHand.filter(p => p.val1 !== piece.val1 || p.val2 !== piece.val2);
         placePieceOnBoard(piece, targetEnd);
-        // متغيرات تباعد الطاولة
-let layoutLeftX = -1.0, layoutRightX = 1.0;
-const stepSize = 0.95; // تقليص مسافة الفراغ بين القطعة والأخرى لتوفير مساحة أوسع على الشاشة
+        
         currentPlayer = 'player';
         passCount = 0;
         checkRoundEnd();
@@ -253,8 +270,7 @@ function placePieceOnBoard(piece, targetEnd) {
     sounds.placePiece.play();
     
     if (boardEnds.left === null) {
-        boardEnds.left = piece.val1; 
-        boardEnds.right = piece.val2;
+        boardEnds.left = piece.val1; boardEnds.right = piece.val2;
     } else {
         if (targetEnd === 'left') boardEnds.left = (piece.val1 === boardEnds.left) ? piece.val2 : piece.val1;
         else boardEnds.right = (piece.val1 === boardEnds.right) ? piece.val2 : piece.val1;
@@ -265,11 +281,11 @@ function placePieceOnBoard(piece, targetEnd) {
     if(targetEnd === 'center') {
         mesh.position.set(0, 0.1, 0);
     } else if (targetEnd === 'left') {
-        layoutLeftX -= stepSize;
         mesh.position.set(layoutLeftX, 0.1, 0);
+        layoutLeftX -= stepSize;
     } else {
-        layoutRightX += stepSize;
         mesh.position.set(layoutRightX, 0.1, 0);
+        layoutRightX += stepSize;
     }
     
     mesh.rotation.y = piece.isDouble ? Math.PI/2 : 0;
@@ -277,6 +293,7 @@ function placePieceOnBoard(piece, targetEnd) {
     scene.add(mesh);
     renderHand3D();
 }
+
 function playerDrawOrPass() {
     if (gameDeck.length > 0) {
         playerHand.push(gameDeck.pop());
@@ -284,7 +301,9 @@ function playerDrawOrPass() {
         checkPlayerAvailableMoves();
     } else {
         passCount++;
-        document.getElementById('action-buttons').classList.add('d-none');
+        const actionBtns = document.getElementById('action-buttons');
+        if(actionBtns) actionBtns.classList.add('d-none');
+        
         currentPlayer = 'opponent';
         if(isMultiplayer) socket.emit('playerPassed', { room: currentRoom });
         checkRoundEnd();
@@ -292,15 +311,20 @@ function playerDrawOrPass() {
 }
 
 function checkPlayerAvailableMoves() {
+    const actionBtns = document.getElementById('action-buttons');
+    const actionText = document.getElementById('action-text');
+    if(!actionBtns || !actionText) return;
+
     if (currentPlayer !== 'player') {
-        document.getElementById('action-buttons').classList.add('d-none');
+        actionBtns.classList.add('d-none');
         return;
     }
+    
     if (getValidMoves(playerHand).length === 0) {
-        document.getElementById('action-buttons').classList.remove('d-none');
-        document.getElementById('action-text').innerText = gameDeck.length > 0 ? `اسحب (${gameDeck.length})` : "مرر دورك (Pass)";
+        actionBtns.classList.remove('d-none');
+        actionText.innerText = gameDeck.length > 0 ? `اسحب (${gameDeck.length})` : "مرر دورك (Pass)";
     } else {
-        document.getElementById('action-buttons').classList.add('d-none');
+        actionBtns.classList.add('d-none');
     }
 }
 
@@ -329,8 +353,11 @@ function checkRoundEnd() {
         } else {
             showModal('تعادل (قفلة)', `لا نقاط لأحد.`);
         }
-        document.getElementById('score-player').innerText = playerTotalScore;
-        document.getElementById('score-opponent').innerText = opponentTotalScore;
+        
+        const pScoreEl = document.getElementById('score-player');
+        const oScoreEl = document.getElementById('score-opponent');
+        if(pScoreEl) pScoreEl.innerText = playerTotalScore;
+        if(oScoreEl) oScoreEl.innerText = opponentTotalScore;
         
         if (playerTotalScore >= 100) alert("مبروك فزت باللعبة كاملة!");
         if (opponentTotalScore >= 100) alert("حظاً أوفر، فاز الخصم باللعبة.");
@@ -341,27 +368,44 @@ function checkRoundEnd() {
 }
 
 function showModal(title, msg) {
-    document.getElementById('modal-title').innerText = title;
-    document.getElementById('modal-msg').innerText = msg;
-    new bootstrap.Modal(document.getElementById('gameOverModal')).show();
+    const mTitle = document.getElementById('modal-title');
+    const mMsg = document.getElementById('modal-msg');
+    const modalEl = document.getElementById('gameOverModal');
+    
+    if(mTitle) mTitle.innerText = title;
+    if(mMsg) mMsg.innerText = msg;
+    if(modalEl) new bootstrap.Modal(modalEl).show();
 }
 
 function nextRound() {
-    bootstrap.Modal.getInstance(document.getElementById('gameOverModal')).hide();
+    const modalEl = document.getElementById('gameOverModal');
+    if(modalEl) bootstrap.Modal.getInstance(modalEl).hide();
     initRound();
 }
 
 // --- 6. غرف اللعب والدردشة (Socket.io) ---
-function createRoom() {
-    currentRoom = Math.random().toString(36).substring(2, 7).toUpperCase();
-    socket.emit('createRoom', currentRoom);
-    document.getElementById('room-code-text').innerText = currentRoom;
-    document.getElementById('room-code-display').classList.remove('d-none');
-    document.getElementById('chat-box').classList.remove('d-none');
+const btnCreateRoom = document.getElementById('btn-create-room');
+if (btnCreateRoom) {
+    btnCreateRoom.addEventListener('click', () => {
+        currentRoom = Math.random().toString(36).substring(2, 7).toUpperCase();
+        isMultiplayer = true;
+        socket.emit('createRoom', currentRoom);
+        
+        const mainMenu = document.getElementById('main-menu');
+        if(mainMenu) mainMenu.style.display = 'none';
+        
+        alert(`تم إنشاء الغرفة! كود الغرفة الخاص بك هو: ${currentRoom}`);
+        
+        const chatBox = document.getElementById('chat-box');
+        if(chatBox) chatBox.classList.remove('d-none');
+    });
 }
 
 function joinRoom() {
-    let code = document.getElementById('room-input').value.trim().toUpperCase();
+    const roomInput = document.getElementById('room-input');
+    if(!roomInput) return;
+    
+    let code = roomInput.value.trim().toUpperCase();
     if(code) {
         socket.emit('joinRoom', code);
         currentRoom = code;
@@ -370,15 +414,18 @@ function joinRoom() {
 
 socket.on('gameReady', () => {
     isMultiplayer = true;
-    document.getElementById('room-controls').classList.add('d-none');
-    document.getElementById('chat-box').classList.remove('d-none');
     
-    if (camera && renderer) {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    }
+    const roomControls = document.getElementById('room-controls');
+    const mainMenu = document.getElementById('main-menu');
+    const chatBox = document.getElementById('chat-box');
+    const gameContainer = document.getElementById('game-container');
     
+    if(roomControls) roomControls.classList.add('d-none');
+    if(mainMenu) mainMenu.style.display = 'none';
+    if(chatBox) chatBox.classList.remove('d-none');
+    if(gameContainer) gameContainer.style.display = 'block';
+    
+    updateCanvasSize();
     initRound();
 });
 
@@ -396,27 +443,35 @@ socket.on('opponentPassed', () => {
     checkRoundEnd();
 });
 
-// الدردشة والمشاركة
+socket.on('receiveMessage', (data) => {
+    const msgs = document.getElementById('chat-messages');
+    if(msgs) {
+        msgs.innerHTML += `<div><strong class="text-danger">الخصم:</strong> ${data.message}</div>`;
+        msgs.scrollTop = msgs.scrollHeight; 
+    }
+});
+
 function toggleChat() {
     let chat = document.getElementById('chat-box');
     let icon = document.getElementById('chat-icon');
-    chat.classList.toggle('chat-minimized');
-    icon.className = chat.classList.contains('chat-minimized') ? "fas fa-chevron-up" : "fas fa-chevron-down";
+    if(chat && icon) {
+        chat.classList.toggle('chat-minimized');
+        icon.className = chat.classList.contains('chat-minimized') ? "fas fa-chevron-up" : "fas fa-chevron-down";
+    }
 }
 
 function handleChatEnter(e) {
     if (e.key === 'Enter' && e.target.value.trim()) {
         let msg = e.target.value.trim();
         socket.emit('sendMessage', { room: currentRoom, message: msg });
-        document.getElementById('chat-messages').innerHTML += `<div><strong class="text-primary">أنت:</strong> ${msg}</div>`;
+        
+        const msgs = document.getElementById('chat-messages');
+        if(msgs) {
+            msgs.innerHTML += `<div><strong class="text-primary">أنت:</strong> ${msg}</div>`;
+            msgs.scrollTop = msgs.scrollHeight;
+        }
         e.target.value = '';
     }
 }
-socket.on('receiveMessage', (data) => {
-    document.getElementById('chat-messages').innerHTML += `<div><strong class="text-danger">الخصم:</strong> ${data.message}</div>`;
-});
-
-function copyRoomCode() { navigator.clipboard.writeText(currentRoom); }
-function shareGame() { if (navigator.share) navigator.share({ title: 'دومينو 3D', url: window.location.href }); }
 
 window.onload = init3D;
