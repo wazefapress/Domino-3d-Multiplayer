@@ -13,17 +13,15 @@ const sounds = {
 // --- 2. محرك 3D (Three.js) ---
 let scene, camera, renderer, raycaster, mouse;
 
-// 1. ضبط الكاميرا لتغطي أسفل الشاشة بالكامل
 function init3D() {
+    const container = document.getElementById('game-canvas');
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1e5631); // طاولة خضراء
+    
+    // إعداد الكاميرا للوضع الأفقي مع ضبط النطاق ليشمل يد اللاعب كاملة
     camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set(0, 8.5, 8.8); 
-    camera.lookAt(0, 0, 0.5); // توجيه النظر قليلاً نحو الأسفل ليشمل اليد كاملة
-}
-    
-    // إعداد الكاميرا للوضع الأفقي (Landscape) - قريبة وتغطي العرض
-    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, 8, 8.5); 
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, 0, 0.5); // تركيز الكاميرا ليشمل الأسفل تماماً
     
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -125,17 +123,16 @@ function createDominoMesh(val1, val2) {
     return new THREE.Mesh(geometry, materials);
 }
 
-
-// 2. ضبط موقع القطع في يد اللاعب لمنع قصها
 function renderHand3D() {
     scene.children = scene.children.filter(c => !c.userData.inHand);
     
+    // حساب بداية صف القطع بناءً على عددها
     const startX = -((playerHand.length - 1) * 1.2) / 2;
     playerHand.forEach((piece, index) => {
         const mesh = createDominoMesh(piece.val1, piece.val2);
-        // سحب القطع للخلف قليلاً (Z=4.8) ورفعها (Y=0.4) لتبقى كاملة داخل الشاشة
+        // Z=4.8 تجعل القطع تظهر كاملة فوق الحافة السفلية دون أي اقتصاص
         mesh.position.set(startX + (index * 1.2), 0.4, 4.8); 
-        mesh.rotation.x = Math.PI / 6; // مائل زاوية مريحة للرؤية
+        mesh.rotation.x = Math.PI / 6;
         
         mesh.userData = { ...piece, inHand: true, isPlayerPiece: true };
         scene.add(mesh);
@@ -279,12 +276,12 @@ function placePieceOnBoard(piece, targetEnd) {
     const mesh = createDominoMesh(piece.val1, piece.val2);
     
     if(targetEnd === 'center') {
-        mesh.position.set(0, 0.1, 0);
+        mesh.position.set(0, 0.1, -0.5);
     } else if (targetEnd === 'left') {
-        mesh.position.set(layoutLeftX, 0.1, 0);
+        mesh.position.set(layoutLeftX, 0.1, -0.5);
         layoutLeftX -= stepSize;
     } else {
-        mesh.position.set(layoutRightX, 0.1, 0);
+        mesh.position.set(layoutRightX, 0.1, -0.5);
         layoutRightX += stepSize;
     }
     
