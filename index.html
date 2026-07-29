@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=portrait">
+    
+    <!-- SEO & Meta Tags -->
+    <title>لعبة الدومينو 3D الاحترافية</title>
+    <meta name="description" content="العب الدومينو ثلاثية الأبعاد أونلاين مع أصدقائك أو ضد الكمبيوتر. تحدى بذكاء حتى تصل إلى 100 نقطة!">
+    <meta name="keywords" content="دومينو, لعبة دومينو, دومينو 3D, لعب اونلاين, العاب ذكاء">
+    <meta name="author" content="هيثم زيدان">
+    <meta property="og:title" content="لعبة الدومينو 3D الاحترافية">
+    <meta property="og:description" content="العب الدومينو ثلاثية الأبعاد أونلاين مع أصدقائك أو ضد الكمبيوتر.">
+    <meta property="og:type" content="website">
+
+    <!-- Bootstrap 5 & FontAwesome -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #1a1a2e; touch-action: none; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        
+        #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        .pointer-events-auto { pointer-events: auto; }
+        
+        #landscape-warning { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #fff; z-index: 9999; justify-content: center; align-items: center; text-align: center; font-size: 1.5rem; }
+        @media screen and (orientation: landscape) {
+            #landscape-warning { display: flex !important; }
+            #ui-layer, #game-canvas { display: none !important; }
+        }
+
+        #chat-box { position: absolute; bottom: 60px; left: 20px; width: 280px; height: 300px; background: rgba(255,255,255,0.95); border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; flex-direction: column; transition: height 0.3s; z-index: 100; }
+        #chat-header { background: #0d6efd; color: white; padding: 10px; border-radius: 12px 12px 0 0; cursor: grab; display: flex; justify-content: space-between; align-items: center; }
+        #chat-messages { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.9rem; }
+        .chat-minimized { height: 45px !important; overflow: hidden; }
+
+        .credits { position: absolute; bottom: 10px; right: 10px; color: rgba(255,255,255,0.6); font-size: 0.8rem; pointer-events: auto; text-decoration: none; }
+        .credits:hover { color: white; }
+    </style>
+</head>
+<body>
+    <div id="landscape-warning">
+        <div>
+            <i class="fas fa-mobile-alt fa-3x mb-3" style="transform: rotate(90deg);"></i>
+            <p>اللعبة مصممة للعمل بالوضع العمودي فقط.<br>يرجى تدوير الهاتف.</p>
+        </div>
+    </div>
+
+    <div id="game-canvas"></div>
+
+    <div id="ui-layer" class="d-flex flex-column p-3">
+        <!-- الشريط العلوي -->
+        <div class="d-flex justify-content-between align-items-start pointer-events-auto">
+            <div class="bg-dark text-white p-2 rounded shadow-sm border border-secondary text-center">
+                <h6 class="m-0" style="font-size: 0.85rem;">النقاط (100)</h6>
+                <div class="fw-bold text-warning" style="font-size: 1rem;">أنت: <span id="score-player">0</span> | الخصم: <span id="score-opponent">0</span></div>
+            </div>
+            <button class="btn btn-sm btn-light shadow-sm" onclick="shareGame()"><i class="fas fa-share-alt"></i> مشاركة</button>
+        </div>
+
+        <!-- القائمة الرئيسية للغرف -->
+        <div id="room-controls" class="position-absolute top-50 start-50 translate-middle text-center pointer-events-auto bg-dark p-4 rounded shadow" style="width: 90%; max-width: 350px;">
+            <h4 class="text-white mb-4">دومينو 3D</h4>
+            <button class="btn btn-primary w-100 mb-2" onclick="startGame(true)">لعب ضد الكمبيوتر</button>
+            <hr class="text-light">
+            <button class="btn btn-success w-100 mb-2" onclick="createRoom()">إنشاء غرفة</button>
+            <div class="input-group mb-2">
+                <input type="text" id="room-input" class="form-control" placeholder="كود الغرفة">
+                <button class="btn btn-outline-light" onclick="joinRoom()">انضمام</button>
+            </div>
+            <div id="room-code-display" class="d-none mt-3 p-2 bg-secondary text-white rounded">
+                الكود: <span id="room-code-text" class="fw-bold fs-5"></span>
+                <button class="btn btn-sm btn-light ms-2" onclick="copyRoomCode()"><i class="fas fa-copy"></i></button>
+            </div>
+        </div>
+
+        <!-- أزرار اللعب (سحب / تمرير) -->
+        <div id="action-buttons" class="position-absolute bottom-0 start-50 translate-middle-x mb-5 pb-4 d-none pointer-events-auto">
+            <button id="btn-draw" class="btn btn-warning btn-lg shadow rounded-pill px-4" onclick="playerDrawOrPass()">
+                <i class="fas fa-hand-paper"></i> <span id="action-text">اسحب قطعة</span>
+            </button>
+        </div>
+
+        <!-- الدردشة -->
+        <div id="chat-box" class="pointer-events-auto d-none chat-minimized">
+            <div id="chat-header">
+                <span><i class="fas fa-comments"></i> الدردشة</span>
+                <button class="btn btn-sm text-white p-0" onclick="toggleChat()"><i class="fas fa-chevron-up" id="chat-icon"></i></button>
+            </div>
+            <div id="chat-messages" class="text-dark"></div>
+            <div class="p-2 border-top bg-light">
+                <input type="text" id="chat-input" class="form-control form-control-sm" placeholder="اكتب..." onkeypress="handleChatEnter(event)">
+            </div>
+        </div>
+
+        <!-- الحقوق -->
+        <a href="https://www.patreon.com/HaythamZeidan" target="_blank" class="credits">
+            تطوير: هيثم زيدان &copy; 2026
+        </a>
+    </div>
+
+    <!-- نافذة نهاية الجولة -->
+    <div class="modal fade pointer-events-auto" id="gameOverModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white text-center">
+                <div class="modal-body p-5">
+                    <h2 id="modal-title" class="mb-3"></h2>
+                    <p id="modal-msg" class="lead mb-4"></p>
+                    <button class="btn btn-lg btn-primary w-100" onclick="nextRound()">متابعة <i class="fas fa-arrow-left"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
