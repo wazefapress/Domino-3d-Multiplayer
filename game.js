@@ -5,7 +5,7 @@ let isMultiplayer = false;
 
 const sounds = {
     placePiece: new Howl({ src: ['place.mp3'] }),
-    winRound: new Howl({ src: ['win.mp3'] }),
+    winRound: new Howl({ src: ['win.wav'] }),
     loseRound: new Howl({ src: ['lose.mp3'] }),
     shuffle: new Howl({ src: ['shuffle.mp3'] })
 };
@@ -18,10 +18,11 @@ function init3D() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1e5631); // طاولة خضراء
     
-    // كاميرا للوضع العمودي
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, 12, 8);
-    camera.lookAt(0, 0, 0);
+    
+// إعداد الكاميرا للوضع الأفقي (Landscape)
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 7, 7.5); // تقريب الكاميرا (خفض الارتفاع وتقريب المسافة Z)
+camera.lookAt(0, 0, 0);
     
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -232,7 +233,9 @@ function playAI() {
         
         opponentHand = opponentHand.filter(p => p.val1 !== piece.val1 || p.val2 !== piece.val2);
         placePieceOnBoard(piece, targetEnd);
-        
+        // متغيرات تباعد الطاولة
+let layoutLeftX = -1.0, layoutRightX = 1.0;
+const stepSize = 0.95; // تقليص مسافة الفراغ بين القطعة والأخرى لتوفير مساحة أوسع على الشاشة
         currentPlayer = 'player';
         passCount = 0;
         checkRoundEnd();
@@ -250,7 +253,8 @@ function placePieceOnBoard(piece, targetEnd) {
     sounds.placePiece.play();
     
     if (boardEnds.left === null) {
-        boardEnds.left = piece.val1; boardEnds.right = piece.val2;
+        boardEnds.left = piece.val1; 
+        boardEnds.right = piece.val2;
     } else {
         if (targetEnd === 'left') boardEnds.left = (piece.val1 === boardEnds.left) ? piece.val2 : piece.val1;
         else boardEnds.right = (piece.val1 === boardEnds.right) ? piece.val2 : piece.val1;
@@ -261,11 +265,11 @@ function placePieceOnBoard(piece, targetEnd) {
     if(targetEnd === 'center') {
         mesh.position.set(0, 0.1, 0);
     } else if (targetEnd === 'left') {
+        layoutLeftX -= stepSize;
         mesh.position.set(layoutLeftX, 0.1, 0);
-        layoutLeftX -= 1.2;
     } else {
+        layoutRightX += stepSize;
         mesh.position.set(layoutRightX, 0.1, 0);
-        layoutRightX += 1.2;
     }
     
     mesh.rotation.y = piece.isDouble ? Math.PI/2 : 0;
@@ -273,7 +277,6 @@ function placePieceOnBoard(piece, targetEnd) {
     scene.add(mesh);
     renderHand3D();
 }
-
 function playerDrawOrPass() {
     if (gameDeck.length > 0) {
         playerHand.push(gameDeck.pop());
