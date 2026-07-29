@@ -12,7 +12,6 @@ const sounds = {
 
 // --- 2. محرك 3D (Three.js) ---
 let scene, camera, renderer, raycaster, mouse;
-let tablePieces = [];
 
 function init3D() {
     const container = document.getElementById('game-canvas');
@@ -38,12 +37,17 @@ function init3D() {
 
     window.addEventListener('resize', onWindowResize);
     window.addEventListener('click', onPlayerInput);
-    window.addEventListener('touchstart', (e) => { e.clientX = e.touches[0].clientX; e.clientY = e.touches[0].clientY; onPlayerInput(e); }, { passive: false });
+    window.addEventListener('touchstart', (e) => { 
+        e.clientX = e.touches[0].clientX; 
+        e.clientY = e.touches[0].clientY; 
+        onPlayerInput(e); 
+    }, { passive: false });
 
     animate3D();
 }
 
 function onWindowResize() {
+    if (!camera || !renderer) return;
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -54,16 +58,28 @@ function animate3D() {
     renderer.render(scene, camera);
 }
 
-// رسم الإكساء ديناميكياً
-function createDominoFaceTexture(dots) {
+// --- 3. رسم قطع الدومينو الواقعية (الخط الفاصل والنقاط) ---
+function createDominoTexture(val1, val2) {
     const canvas = document.createElement('canvas');
-    canvas.width = 128; canvas.height = 128;
+    canvas.width = 128; 
+    canvas.height = 256; 
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fdfdfd';
-    ctx.fillRect(0, 0, 128, 128);
-    ctx.fillStyle = '#111';
 
-    const positions = {
+    // الخلفية البيضاء للقطعة
+    ctx.fillStyle = '#fdfdfd';
+    ctx.fillRect(0, 0, 128, 256);
+
+    // حدود القطعة
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(0, 0, 128, 256);
+
+    // الخط الفاصل الأسود في المنتصف
+    ctx.fillStyle = '#111111';
+    ctx.fillRect(0, 124, 128, 8);
+
+    // إحداثيات النقاط السوداء (من 0 إلى 6)
+    const dotPositions = {
         1: [[64, 64]],
         2: [[32, 32], [96, 96]],
         3: [[32, 32], [64, 64], [96, 96]],
@@ -72,35 +88,53 @@ function createDominoFaceTexture(dots) {
         6: [[32, 32], [96, 32], [32, 64], [96, 64], [32, 96], [96, 96]]
     };
 
-    if (dots > 0 && positions[dots]) {
-        positions[dots].forEach(pos => {
-            ctx.beginPath();
-            ctx.arc(pos[0], pos[1], 12, 0, Math.PI * 2);
-            ctx.fill();
-        });
+    function drawDots(dots, yOffset) {
+        if (dots > 0 && dotPositions[dots]) {
+            dotPositions[dots].forEach(pos => {
+                ctx.beginPath();
+                ctx.arc(pos[0], pos[1] * 0.85 + yOffset, 10, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
     }
+
+    drawDots(val1, 10);
+    drawDots(val2, 138);
+
     return new THREE.CanvasTexture(canvas);
 }
 
+function createDominoMesh(val1, val2) {
+    const geometry = new THREE.BoxGeometry(1, 0.2, 2);
+    const texture = createDominoTexture(val1, val2);
+    
+    const materials = [
+        new THREE.MeshStandardMaterial({ color: 0xffffff }),
+        new THREE.MeshStandardMaterial({ color: 0xffffff }),
+        new THREE.MeshStandardMaterial({ map: texture }), // الوجه العلوي يحمل النقاط والخط الفاصل
+        new THREE.MeshStandardMaterial({ color: 0xdddddd }),
+        new THREE.MeshStandardMaterial({ color: 0xffffff }),
+        new THREE.MeshStandardMaterial({ color: 0xffffff })
+    ];
+
+    return new THREE.Mesh(geometry, materials);
+}
+
 function renderHand3D() {
-    // إزالة قطع اليد القديمة
     scene.children = scene.children.filter(c => !c.userData.inHand);
     
     const startX = -((playerHand.length - 1) * 1.2) / 2;
     playerHand.forEach((piece, index) => {
-        const geo = new THREE.BoxGeometry(1, 0.2, 2);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        const mesh = new THREE.Mesh(geo, mat);
-        
+        const mesh = createDominoMesh(piece.val1, piece.val2);
         mesh.position.set(startX + (index * 1.2), 0.5, 6);
-        mesh.rotation.x = Math.PI / 8; // ميلان خفيف للكاميرا
+        mesh.rotation.x = Math.PI / 8;
         
         mesh.userData = { ...piece, inHand: true, isPlayerPiece: true };
         scene.add(mesh);
     });
 }
 
-// --- 3. محرك اللعبة (Game Logic) ---
+// --- 4. محرك اللعبة (Game Logic) ---
 let gameDeck = [], playerHand = [], opponentHand = [];
 let boardEnds = { left: null, right: null };
 let currentPlayer = ''; 
@@ -111,11 +145,18 @@ let layoutLeftX = -1.5, layoutRightX = 1.5;
 function startGame(vsComputer = true) {
     document.getElementById('room-controls').classList.add('d-none');
     isMultiplayer = !vsComputer;
+    
+    // تحديث أبعاد Three.js لمنع الشاشة السوداء عند بدء اللعب
+    if (camera && renderer) {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    
     initRound();
 }
 
 function initRound() {
-    // مسح الطاولة
     scene.children = scene.children.filter(c => !c.userData.onBoard);
     boardEnds = { left: null, right: null };
     layoutLeftX = -1.5; layoutRightX = 1.5;
@@ -151,7 +192,7 @@ function getValidMoves(hand) {
     return hand.filter(p => p.val1 === boardEnds.left || p.val2 === boardEnds.left || p.val1 === boardEnds.right || p.val2 === boardEnds.right);
 }
 
-// --- 4. تفاعل اللاعب والذكاء الاصطناعي ---
+// --- 5. التفاعل والذكاء الاصطناعي ---
 function onPlayerInput(event) {
     if (currentPlayer !== 'player') return;
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -215,18 +256,15 @@ function placePieceOnBoard(piece, targetEnd) {
         else boardEnds.right = (piece.val1 === boardEnds.right) ? piece.val2 : piece.val1;
     }
 
-    // تمثيل 3D مبسط للطاولة
-    const geo = new THREE.BoxGeometry(1, 0.2, 2);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xdddddd }); // يفترض استخدام Textures هنا
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = createDominoMesh(piece.val1, piece.val2);
     
     if(targetEnd === 'center') {
         mesh.position.set(0, 0.1, 0);
     } else if (targetEnd === 'left') {
-        mesh.position.set(layoutLeftX, 0.1, (Math.random()-0.5)*0.5);
+        mesh.position.set(layoutLeftX, 0.1, 0);
         layoutLeftX -= 1.2;
     } else {
-        mesh.position.set(layoutRightX, 0.1, (Math.random()-0.5)*0.5);
+        mesh.position.set(layoutRightX, 0.1, 0);
         layoutRightX += 1.2;
     }
     
@@ -310,9 +348,9 @@ function nextRound() {
     initRound();
 }
 
-// --- 5. وظائف الشبكات والواجهة ---
+// --- 6. غرف اللعب والدردشة (Socket.io) ---
 function createRoom() {
-    currentRoom = Math.random().toString(36).substring(2, 8).toUpperCase();
+    currentRoom = Math.random().toString(36).substring(2, 7).toUpperCase();
     socket.emit('createRoom', currentRoom);
     document.getElementById('room-code-text').innerText = currentRoom;
     document.getElementById('room-code-display').classList.remove('d-none');
@@ -331,11 +369,18 @@ socket.on('gameReady', () => {
     isMultiplayer = true;
     document.getElementById('room-controls').classList.add('d-none');
     document.getElementById('chat-box').classList.remove('d-none');
+    
+    if (camera && renderer) {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    
     initRound();
 });
 
 socket.on('piecePlayed', (data) => {
-    opponentHand.pop(); // خصم قطعة وهمية
+    opponentHand.pop();
     placePieceOnBoard(data.piece, data.targetEnd);
     currentPlayer = 'player';
     passCount = 0;
@@ -371,5 +416,4 @@ socket.on('receiveMessage', (data) => {
 function copyRoomCode() { navigator.clipboard.writeText(currentRoom); }
 function shareGame() { if (navigator.share) navigator.share({ title: 'دومينو 3D', url: window.location.href }); }
 
-// بدء التشغيل
 window.onload = init3D;
